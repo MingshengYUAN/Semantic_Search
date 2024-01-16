@@ -3,18 +3,140 @@ import time
 import pandas as pd
 import numpy as np
 import requests
-from torch import Tensor
-import torch.nn.functional as F
 import torch
-import numpy as np
-import pandas as pd
 from transformers import AutoTokenizer, AutoModel
 from embedding_model_configuration import *
 from sentence_transformers import SentenceTransformer
 import langid
 from numpy.linalg import norm
+import xlrd
+import chromadb
+
+client = chromadb.PersistentClient(path="./chromadb")
+
+model_en = SentenceTransformer('sentence-transformers/all-mpnet-base-v2', device = "cuda:0")
+model_ar = SentenceTransformer('sentence-transformers/paraphrase-multilingual-mpnet-base-v2', device = "cuda:0")
 
 logger = logger
+index_dict = {"question_ar":-1, "question_en":-1, "answer_ar":-1, "answer_en":-1}
+
+################ empty collection
+
+def empty_collection(collection_name):
+	name_list = []
+	if not len(collection_name):
+		tmp = client.list_collections()
+		for i in tmp:
+			client.delete_collection(i.name)
+			name_list.append(i.name)
+		return name_list
+	else:
+		for i in collection_name:
+			try:
+				client.delete_collection(i)
+				name_list.append(i)
+			except:
+				pass
+		return name_list
+		
+################ read excel
+def process_excel(files=None, file_path=None):
+	if files:
+		wb = xlrd.open_workbook(file_contents=files.read())
+	elif file_path:
+		wb = xlrd.open_workbook(file_path)
+	data_sheet = wb.sheet_by_index(0) # get first sheet
+	maxRows = data_sheet.nrows  # row num
+	maxColumns = data_sheet.ncols  # column num
+	# print(f"maxRows:{maxRows} |  maxCols:{maxColumns}")
+	# print(f"test: {data_sheet.cell(0,1).value.lower()}")
+	for i in range(0, maxColumns):
+		# print(f"i_num:{i}")
+		index_dict[data_sheet.cell(0,i).value.lower()] = i
+
+	if index_dict['question_ar'] == -1:
+		del index_dict['question_ar']
+		del index_dict['answer_ar']
+	elif index_dict['question_en'] == -1:
+		del index_dict['question_en']
+		del index_dict['answer_en']
+
+	all_data = []
+	for x in [("question_ar", "answer_ar"), ("question_en", "answer_en")]:
+		embedding_candidates = []
+		documents = []
+		if x[0] in index_dict:
+			question_candidates = []
+			answer_candidates = []
+			for i in range(1, maxRows):  # skip the first row data(line index)
+				question = data_sheet.cell(i, index_dict[x[0]]).value
+				answer = data_sheet.cell(i, index_dict[x[1]]).value
+				question_candidates.append(question)
+				answer_candidates.append(answer)
+				documents.append(f"{question}|__|{answer}")
+			embedding_candidates.append((question_candidates, answer_candidates))
+			# print(f"test: {x[0]}")
+			# exit()
+			all_data.append((embedding_candidates, documents, "ar" if "ar" in x[0] else "en"))
+	return all_data
+
+################ embedding the data and store in the vector DB
+
+def embedding_store(all_data, token_name):
+	# check chromadb
+	## TODO insert stead of add
+	collection = client.get_or_create_collection(name=token_name, metadata={"hnsw:space": "cosine"})
+
+	documents_list = []
+	metadata_list = []
+	id_list = []
+	embedding_list = []
+	for i in all_data:
+		if i[2] == 'ar':
+			question_embedding = model_ar.encode(i[0][0][0]).tolist()
+			answer_embedding = model_ar.encode(i[0][0][1]).tolist()
+		else:
+			question_embedding = model_ar.encode(i[0][0][0]).tolist()
+			answer_embedding = model_ar.encode(i[0][0][1]).tolist()
+		for num, j in enumerate(i[1]):
+			documents_list.append(j)
+			documents_list.append(j)
+			embedding_list.append(question_embedding[num])
+			embedding_list.append(answer_embedding[num])
+			id_list.append(f"Q|__|{token_name}|__|{num}|__|{i[2]}")
+			id_list.append(f"A|__|{token_name}|__|{num}|__|{i[2]}")
+			metadata_list.append({"source": token_name, "type": "Q", "lang":i[2]})
+			metadata_list.append({"source": token_name, "type": "A", "lang":i[2]})
+
+		collection.add(documents=documents_list, embeddings=embedding_list, metadatas=metadata_list, ids=id_list)
+	
+	return "Success"
+
+def qa_pairs_search(question, token_name):
+	try:
+		collection = client.get_collection(name=token_name)
+	except:
+		return "Get Collection ERROR!"
+	lang = check_lang_id(question)
+	if lang == 'ar':
+		question_embedding = model_ar.encode([question])[0].tolist()
+	else:
+		question_embedding = model_en.encode([question])[0].tolist()
+	
+	qa_pairs_candidates = collection.query(query_embeddings=[question_embedding], n_results=1, where={"type": "Q"})['documents'][0][0]
+	# print(f"test : {qa_pairs_candidates}")
+	# test : [["test is good?|__|Yes, it's good!!!", "test is good?|__|NO, it's good!!!"]]
+	question_res = qa_pairs_candidates.split('|__|')[0]
+	answer_res = qa_pairs_candidates.split('|__|')[1]
+
+	question_res_embedding = model_en.encode([question_res])[0].tolist()
+
+	score = np.dot(question_res_embedding,question_embedding)/(norm(question_res_embedding)*norm(question_embedding))[0]
+
+
+	return {"Question": question_res, "Answer": answer_res, "Score": score}
+
+		
 
 ################ check lang
 
@@ -34,14 +156,6 @@ check_lang_id("hello, how are you?")
 
 
 ################ en embedding
-device = torch.device("cuda:0")
-# model_en = SentenceTransformer(
-# 	'sentence-transformers/all-MiniLM-L6-v2', 
-# 	device = "cuda:0",
-# 	)
-model_en = SentenceTransformer('sentence-transformers/all-mpnet-base-v2', device = "cuda:0")
-# model_en = SentenceTransformer('sentence-transformers/all-MiniLM-L12-v2', device = "cuda:0")
-
 
 def text_embedding_en(sentence):
 	try:
@@ -57,7 +171,6 @@ text_embedding_en("hello, how are you?")
 '''
 
 ############## arabic embedding
-model_ar = SentenceTransformer('sentence-transformers/paraphrase-multilingual-mpnet-base-v2', device = "cuda:0")
 
 def text_embedding_ar(sentence):
 	try:
