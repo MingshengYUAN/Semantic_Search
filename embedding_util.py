@@ -31,12 +31,14 @@ def read_qa_pairs(token_name):
 	for i in en_qa_pairs:
 		tmp_question = i.split('|__|')[0]
 		tmp_answer = i.split('|__|')[1]
-		en_list.append((tmp_question, tmp_answer))
+		tmp_reference = i.split('|__|')[2]
+		en_list.append((tmp_question, tmp_answer, tmp_reference))
 	
 	for i in ar_qa_pairs:
 		tmp_question = i.split('|__|')[0]
 		tmp_answer = i.split('|__|')[1]
-		ar_list.append((tmp_question, tmp_answer))
+		tmp_reference = i.split('|__|')[2]
+		ar_list.append((tmp_question, tmp_answer, tmp_reference))
 
 	return {"en_list": en_list, "ar_list": ar_list}
 

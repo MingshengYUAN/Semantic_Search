@@ -155,7 +155,7 @@ template = {
           "200": {
             "description": "Successful operation",
             "schema": {
-              "$ref": "#/definitions/standard_res"
+              "$ref": "#/definitions/qa_response"
             }
           }
         }
@@ -243,6 +243,35 @@ template = {
             "type": "string"
           },
           "example": "XXX success!"
+        },
+        "status": {
+          "items": {
+            "type": "string"
+          },
+          "example": "Success!"
+        },
+        "running_time": {
+          "items": {
+            "type": "number"
+          },
+          "example": "0.0325"
+        }
+      }
+    },
+    "qa_response": {
+      "type": "object",
+      "properties": {
+        "response": {
+          "items": {
+            "type": "string"
+          },
+          "example": "XXX success!"
+        },
+        "reference": {
+          "items": {
+            "type": "string"
+          },
+          "example": "From xxxx"
         },
         "status": {
           "items": {
