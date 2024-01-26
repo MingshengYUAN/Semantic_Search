@@ -17,7 +17,7 @@ template = {
         "tags": [
           "upload_qa_pairs"
         ],
-        "summary": "Upload Excel file that meets specifications",
+        "summary": "Upload Excel file that meets specifications form",
         "description": "",
         "consumes": [
           "multipart/form-data"
@@ -45,7 +45,78 @@ template = {
           "200": {
             "description": "Successful operation",
             "schema": {
-              "$ref": "#/definitions/ApiResponse"
+              "$ref": "#/definitions/standard_res"
+            }
+          }
+        }
+      }
+    },
+    "/upload_google_qa_pairs": {
+      "post": {
+        "tags": [
+          "upload_google_qa_pairs"
+        ],
+        "summary": "Upload Excel file from Google docs",
+        "description": "",
+        "consumes": [
+          "multipart/form-data"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "name": "file",
+            "in": "formData",
+            "description": "excel to upload",
+            "required": True,
+            "type": "file"
+          },
+          {
+            "name": "token_name",
+            "in": "formData",
+            "description": "Specific token name for the excel or the task",
+            "required": True,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "schema": {
+              "$ref": "#/definitions/standard_res"
+            }
+          }
+        }
+      }
+    },
+    "/get_qa_pairs": {
+      "post": {
+        "tags": [
+          "get_qa_pairs"
+        ],
+        "summary": "Get uploaded QA pairs",
+        "description": "",
+        "consumes": [
+          "multipart/form-data"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "name": "token_name",
+            "in": "formData",
+            "description": "Token name",
+            "required": True,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "schema": {
+              "$ref": "#/definitions/read_qa_pairs"
             }
           }
         }
@@ -84,7 +155,7 @@ template = {
           "200": {
             "description": "Successful operation",
             "schema": {
-              "$ref": "#/definitions/ApiResponse"
+              "$ref": "#/definitions/standard_res"
             }
           }
         }
@@ -118,7 +189,7 @@ template = {
           "200": {
             "description": "Successful operation",
             "schema": {
-              "$ref": "#/definitions/input_text"
+              "$ref": "#/definitions/standard_res"
             }
           }
         }
@@ -161,6 +232,58 @@ template = {
             "type": "string"
           },
           "example": ["token_name"]
+        }
+      }
+    },
+    "standard_res": {
+      "type": "object",
+      "properties": {
+        "response": {
+          "items": {
+            "type": "string"
+          },
+          "example": "XXX success!"
+        },
+        "status": {
+          "items": {
+            "type": "string"
+          },
+          "example": "Success!"
+        },
+        "running_time": {
+          "items": {
+            "type": "number"
+          },
+          "example": "0.0325"
+        }
+      }
+    },
+    "read_qa_pairs": {
+      "type": "object",
+      "properties": {
+        "en_qa_list": {
+          "items": {
+            "type": "array"
+          },
+          "example": ["(en_Question, en_Answer)"]
+        },
+        "ar_qa_list": {
+          "items": {
+            "type": "array"
+          },
+          "example": ["(ar_Question, ar_Answer)"]
+        },
+        "status": {
+          "items": {
+            "type": "string"
+          },
+          "example": "Success!"
+        },
+        "running_time": {
+          "items": {
+            "type": "number"
+          },
+          "example": "0.0325"
         }
       }
     }

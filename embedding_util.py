@@ -5,12 +5,12 @@ import numpy as np
 import requests
 import torch
 from transformers import AutoTokenizer, AutoModel
-from embedding_model_configuration import *
 from sentence_transformers import SentenceTransformer
 import langid
 from numpy.linalg import norm
 import xlrd
 import chromadb
+from log_info import logger
 
 client = chromadb.PersistentClient(path="./chromadb")
 
@@ -18,7 +18,27 @@ model_en = SentenceTransformer('sentence-transformers/all-mpnet-base-v2', device
 model_ar = SentenceTransformer('sentence-transformers/paraphrase-multilingual-mpnet-base-v2', device = "cuda:0")
 
 logger = logger
-index_dict = {"question_ar":-1, "question_en":-1, "answer_ar":-1, "answer_en":-1}
+index_dict = {"question_ar":-1, "question_en":-1, "answer_ar":-1, "answer_en":-1, "reference": -1}
+
+################ read qa pairs
+
+def read_qa_pairs(token_name):
+	collection = client.get_collection(token_name)
+	en_qa_pairs = np.unique(collection.get(where={"lang": "en", "type": "Q"})['documents'])
+	ar_qa_pairs = np.unique(collection.get(where={"lang": "ar", "type": "Q"})['documents'])
+
+	en_list, ar_list = [], []
+	for i in en_qa_pairs:
+		tmp_question = i.split('|__|')[0]
+		tmp_answer = i.split('|__|')[1]
+		en_list.append((tmp_question, tmp_answer))
+	
+	for i in ar_qa_pairs:
+		tmp_question = i.split('|__|')[0]
+		tmp_answer = i.split('|__|')[1]
+		ar_list.append((tmp_question, tmp_answer))
+
+	return {"en_list": en_list, "ar_list": ar_list}
 
 ################ empty collection
 
@@ -40,6 +60,7 @@ def empty_collection(collection_name):
 		return name_list
 		
 ################ read excel
+
 def process_excel(files=None, file_path=None):
 	if files:
 		wb = xlrd.open_workbook(file_contents=files.read())
@@ -73,11 +94,16 @@ def process_excel(files=None, file_path=None):
 				answer = data_sheet.cell(i, index_dict[x[1]]).value
 				question_candidates.append(question)
 				answer_candidates.append(answer)
-				documents.append(f"{question}|__|{answer}")
+				if index_dict['reference'] != -1:
+					reference = data_sheet.cell(i, index_dict['reference']).value
+					documents.append(f"{question}|__|{answer}|__|{reference}")
+				else:
+					documents.append(f"{question}|__|{answer}|__|")
 			embedding_candidates.append((question_candidates, answer_candidates))
 			# print(f"test: {x[0]}")
 			# exit()
 			all_data.append((embedding_candidates, documents, "ar" if "ar" in x[0] else "en"))
+	logger.info(f"Process Excel Success!")
 	return all_data
 
 ################ embedding the data and store in the vector DB
@@ -98,24 +124,26 @@ def embedding_store(all_data, token_name):
 		else:
 			question_embedding = model_ar.encode(i[0][0][0]).tolist()
 			answer_embedding = model_ar.encode(i[0][0][1]).tolist()
+		exist_num = collection.count()
 		for num, j in enumerate(i[1]):
 			documents_list.append(j)
 			documents_list.append(j)
 			embedding_list.append(question_embedding[num])
 			embedding_list.append(answer_embedding[num])
-			id_list.append(f"Q|__|{token_name}|__|{num}|__|{i[2]}")
-			id_list.append(f"A|__|{token_name}|__|{num}|__|{i[2]}")
+			id_list.append(f"Q|__|{token_name}|__|{num+exist_num}|__|{i[2]}")
+			id_list.append(f"A|__|{token_name}|__|{num+exist_num}|__|{i[2]}")
 			metadata_list.append({"source": token_name, "type": "Q", "lang":i[2]})
 			metadata_list.append({"source": token_name, "type": "A", "lang":i[2]})
 
 		collection.add(documents=documents_list, embeddings=embedding_list, metadatas=metadata_list, ids=id_list)
-	
+	logger.info(f"Load into collection SUCCESS!")
 	return "Success"
 
 def qa_pairs_search(question, token_name):
 	try:
 		collection = client.get_collection(name=token_name)
 	except:
+		logger.info(f"Get Collection ERROR!")
 		return "Get Collection ERROR!"
 	lang = check_lang_id(question)
 	if lang == 'ar':
@@ -128,13 +156,14 @@ def qa_pairs_search(question, token_name):
 	# test : [["test is good?|__|Yes, it's good!!!", "test is good?|__|NO, it's good!!!"]]
 	question_res = qa_pairs_candidates.split('|__|')[0]
 	answer_res = qa_pairs_candidates.split('|__|')[1]
+	reference_res = qa_pairs_candidates.split('|__|')[2]
 
 	question_res_embedding = model_en.encode([question_res])[0].tolist()
 
 	score = np.dot(question_res_embedding,question_embedding)/(norm(question_res_embedding)*norm(question_embedding))[0]
 
 
-	return {"Question": question_res, "Answer": answer_res, "Score": score}
+	return {"Question": question_res, "Answer": answer_res, "Reference":reference_res, "Score": score}
 
 		
 
