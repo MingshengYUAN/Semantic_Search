@@ -14,7 +14,9 @@ from log_info import logger
 
 client = chromadb.PersistentClient(path="./chromadb")
 
-model_en = SentenceTransformer('sentence-transformers/all-mpnet-base-v2', device = "cuda:0")
+# model_en = SentenceTransformer('sentence-transformers/all-mpnet-base-v2', device = "cuda:0")
+model_en = SentenceTransformer('BAAI/bge-base-en-v1.5', device = "cuda:0")
+
 model_ar = SentenceTransformer('sentence-transformers/paraphrase-multilingual-mpnet-base-v2', device = "cuda:0")
 
 logger = logger
@@ -22,8 +24,8 @@ index_dict = {"question_ar":-1, "question_en":-1, "answer_ar":-1, "answer_en":-1
 
 ################ read qa pairs
 
-def read_qa_pairs(token_name):
-	collection = client.get_collection(token_name)
+def read_qa_pairs(application_name):
+	collection = client.get_collection(application_name)
 	en_qa_pairs = np.unique(collection.get(where={"lang": "en", "type": "Q"})['documents'])
 	ar_qa_pairs = np.unique(collection.get(where={"lang": "ar", "type": "Q"})['documents'])
 
@@ -44,9 +46,9 @@ def read_qa_pairs(token_name):
 
 ################ empty collection
 
-def empty_collection(collection_name):
+def empty_application(application_name):
 	name_list = []
-	if not len(collection_name):
+	if not len(application_name):
 		tmp = client.list_collections()
 		for i in tmp:
 			client.delete_collection(i.name)
@@ -60,7 +62,22 @@ def empty_collection(collection_name):
 			except:
 				pass
 		return name_list
-		
+
+################ del files
+
+def del_files(application_name, token_names):
+	name_list = []
+	try:
+		collection = client.get_collection(name=application_name)
+	except:
+		logger.info(f"Get Collection ERROR!")
+		return "Get Collection ERROR!"
+	for i in token_names:
+		if len(collection.get(where={"source":i})) > 0:
+			collection.delete(where={"source":i})
+			name_list.append(i)
+	return name_list
+
 ################ read excel
 
 def process_excel(files=None, file_path=None):
@@ -110,10 +127,11 @@ def process_excel(files=None, file_path=None):
 
 ################ embedding the data and store in the vector DB
 
-def embedding_store(all_data, token_name):
+def embedding_store(all_data, token_name, application_name):
 	# check chromadb
 	## TODO insert stead of add
-	collection = client.get_or_create_collection(name=token_name, metadata={"hnsw:space": "cosine"})
+	# collection = client.get_or_create_collection(name=token_name, metadata={"hnsw:space": "cosine"})
+	collection = client.get_or_create_collection(name=application_name, metadata={"hnsw:space": "cosine"})
 
 	documents_list = []
 	metadata_list = []
@@ -141,9 +159,9 @@ def embedding_store(all_data, token_name):
 	logger.info(f"Load into collection SUCCESS!")
 	return "Success"
 
-def qa_pairs_search(question, token_name):
+def qa_pairs_search(question, application_name):
 	try:
-		collection = client.get_collection(name=token_name)
+		collection = client.get_collection(name=application_name)
 	except:
 		logger.info(f"Get Collection ERROR!")
 		return "Get Collection ERROR!"
