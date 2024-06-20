@@ -124,6 +124,27 @@ template = {
             "description": "Application_name",
             "required": True,
             "type": "string"
+          },
+          {
+            "name": "lang",
+            "in": "formData",
+            "description": "QA_pairs language",
+            "required": True,
+            "type": "string"
+          },
+          {
+            "name": "start_index",
+            "in": "formData",
+            "description": "The start index of the QA pair",
+            "required": True,
+            "type": "integer"
+          },
+          {
+            "name": "end_index",
+            "in": "formData",
+            "description": "The end index of the QA pair",
+            "required": True,
+            "type": "integer"
           }
         ],
         "responses": {
@@ -360,17 +381,17 @@ template = {
     "read_qa_pairs": {
       "type": "object",
       "properties": {
-        "en_qa_list": {
+        "result_list": {
           "items": {
             "type": "array"
           },
-          "example": ["(en_Question, en_Answer)"]
+          "example": ["(Question, Answer)"]
         },
-        "ar_qa_list": {
+        "list_len": {
           "items": {
-            "type": "array"
+            "type": "integer"
           },
-          "example": ["(ar_Question, ar_Answer)"]
+          "example": 98
         },
         "status": {
           "items": {

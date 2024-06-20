@@ -23,7 +23,7 @@ args = parser.parse_args()
 args_default = vars(args)
 ShareArgs.update(args_default)
 
-from embedding_util import process_excel, embedding_store, qa_pairs_search, empty_application, download_file_from_google_drive, read_qa_pairs, del_files
+from embedding_util import process_excel, embedding_store, qa_pairs_search, empty_application, download_file_from_google_drive, read_qa_pairs, del_files, check_collection
 
 config_path = args.config_path
 conf = configparser.ConfigParser()
@@ -52,14 +52,27 @@ except:
 
 #####################
 
+@app.route('/check_collection_exist', methods=['POST'])
+def check_collection_exist():
+    collection_name = request.form.get('application_name')
+    if check_collection(collection_name):
+        return True
+    else:
+        return False
+
+#####################
+
 @app.route('/get_qa_pairs', methods=['POST'])
 def get_qa_pairs():
     start = time.time()
     application_name = request.form.get('application_name')
+    lang = request.form.get('lang')
+    start_index = request.form.get('start_index')
+    end_index = request.form.get('end_index')
     logger.info(f"Load {application_name} existed qa_pairs!")
 
-    response = read_qa_pairs(application_name)
-    return {"en_qa_list": response['en_list'], "ar_qa_list": response['ar_list'], "status": "success", "running_time": float(time.time() - start)}
+    response = read_qa_pairs(application_name=application_name, lang=lang, start_index=int(start_index), end_index=int(end_index))
+    return {"result_list": response['result_list'],  "list_len": response['list_len'], "status": "success", "running_time": float(time.time() - start)}
 
 #####################
 
@@ -85,8 +98,10 @@ def upload_qa_pairs():
     if file_type != 'xlsx':
 
         return "Please upload EXCEL file!"
-
-    all_data = process_excel(files=uploaded_file)
+    try:
+        all_data = process_excel(files=uploaded_file)
+    except:
+        all_data = process_excel(file_path=f"./uploaded/{application_name}/excel/{uploaded_file.filename}")
     embedding_store(all_data, token_name, application_name)
 
     return {"response": "Success", "status":"success", "running_time": float(time.time() - start)}
@@ -118,7 +133,7 @@ def qa_search():
         pass
 
     logger.info(f"No Threshold! Response: {result['Answer']} | Score: {result['Score']}")
-    return {"response": result['Answer'], "reference":result['reference_res'], "score": result['Score'], "status":'success', "running_time": float(time.time() - start)}
+    return {"response": result['Answer'], "reference":result['Reference'], "score": result['Score'], "status":'success', "running_time": float(time.time() - start)}
 
 @app.route('/empty_application', methods=['POST'])
 def do_empty_application():
@@ -126,9 +141,10 @@ def do_empty_application():
     data = request.get_json()
     application_name = data['application_name']
     logger.info(f"Request Delete collection : {application_name}")
-    logger.info(f"Succeed Delete collection : {name_list}")
     
     name_list = empty_application(application_name)
+    logger.info(f"Succeed Delete collection : {name_list}")
+
     return {"response": f"Success delete following collection(Application) : {name_list}", "status":'success', "running_time": float(time.time() - start)}
 
 @app.route('/del_files', methods=['POST'])
@@ -138,9 +154,10 @@ def do_del_files():
     application_name = data['application_name']
     token_names = data['token_names']
     logger.info(f"Request Delete files : {token_names}")
-    logger.info(f"Succeed Delete files : {name_list}")
     
     name_list = del_files(application_name, token_names)
+    logger.info(f"Succeed Delete files : {name_list}")
+
     return {"response": f"Success delete following files in Application <{application_name}> : {name_list}", "status":'success', "running_time": float(time.time() - start)}
 
 @app.route('/upload_google_qa_pairs')
