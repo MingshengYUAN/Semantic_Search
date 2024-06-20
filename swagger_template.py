@@ -39,6 +39,13 @@ template = {
             "description": "Specific token name for the excel or the task",
             "required": True,
             "type": "string"
+          },
+          {
+            "name": "application_name",
+            "in": "formData",
+            "description": "Specific application name",
+            "required": True,
+            "type": "string"
           }
         ],
         "responses": {
@@ -66,16 +73,23 @@ template = {
         ],
         "parameters": [
           {
-            "name": "file",
+            "name": "file_id",
             "in": "formData",
-            "description": "excel to upload",
+            "description": "google doc file id eg:<1SadGNSpLDt4ZuRD6N4xwCAPmJvlfTrm3>",
             "required": True,
-            "type": "file"
+            "type": "string"
           },
           {
             "name": "token_name",
             "in": "formData",
             "description": "Specific token name for the excel or the task",
+            "required": True,
+            "type": "string"
+          },
+          {
+            "name": "application_name",
+            "in": "formData",
+            "description": "Specific application name",
             "required": True,
             "type": "string"
           }
@@ -105,11 +119,32 @@ template = {
         ],
         "parameters": [
           {
-            "name": "token_name",
+            "name": "application_name",
             "in": "formData",
-            "description": "Token name",
+            "description": "Application_name",
             "required": True,
             "type": "string"
+          },
+          {
+            "name": "lang",
+            "in": "formData",
+            "description": "QA_pairs language",
+            "required": True,
+            "type": "string"
+          },
+          {
+            "name": "start_index",
+            "in": "formData",
+            "description": "The start index of the QA pair",
+            "required": True,
+            "type": "integer"
+          },
+          {
+            "name": "end_index",
+            "in": "formData",
+            "description": "The end index of the QA pair",
+            "required": True,
+            "type": "integer"
           }
         ],
         "responses": {
@@ -144,9 +179,9 @@ template = {
             "type": "string"
           },
           {
-            "name": "token_name",
+            "name": "application_name",
             "in": "formData",
-            "description": "Specific token name for the excel or the task",
+            "description": "Specific application name",
             "required": True,
             "type": "string"
           }
@@ -161,12 +196,12 @@ template = {
         }
       }
     },
-    "/empty_collection": {
+    "/empty_application": {
       "post": {
         "tags": [
-          "empty_collection"
+          "empty_application"
         ],
-        "summary": "Empty selected collections or all collections",
+        "summary": "Empty selected application or all applications",
         "description": "",
         "consumes": [
           "application/json"
@@ -178,10 +213,44 @@ template = {
           {
             "in": "body",
             "name": "body",
-            "description": "Given token name or leave empty will empty all collections",
+            "description": "Given application name or leave empty will empty all application",
             "required": True,
             "schema": {
-              "$ref": "#/definitions/collection_name"
+              "$ref": "#/definitions/application_name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "schema": {
+              "$ref": "#/definitions/standard_res"
+            }
+          }
+        }
+      }
+    },
+    "/del_files": {
+      "post": {
+        "tags": [
+          "del_files"
+        ],
+        "summary": "Del selected token name(file)",
+        "description": "",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "description": "Given token names(file)",
+            "required": True,
+            "schema": {
+              "$ref": "#/definitions/file_name"
             }
           }
         ],
@@ -220,18 +289,40 @@ template = {
         }
       }
     },
-    "collection_name": {
+    "application_name": {
       "type": "object",
       "required": [
-        "collection_name"
+        "application_name"
       ],
       "properties": {
-        "collection_name": {
+        "application_name": {
           "type": "array",
           "items": {
             "type": "string"
           },
-          "example": ["token_name"]
+          "example": ["application_name"]
+        }
+      }
+    },
+    "file_name": {
+      "type": "object",
+      "required": [
+        "application_name",
+        "token_names"
+      ],
+      "properties": {
+        "application_name": {
+          "items": {
+            "type": "string"
+          },
+          "example": "application_name"
+        },
+        "token_names": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "example": ["token_names"]
         }
       }
     },
@@ -290,17 +381,17 @@ template = {
     "read_qa_pairs": {
       "type": "object",
       "properties": {
-        "en_qa_list": {
+        "result_list": {
           "items": {
             "type": "array"
           },
-          "example": ["(en_Question, en_Answer)"]
+          "example": ["(Question, Answer)"]
         },
-        "ar_qa_list": {
+        "list_len": {
           "items": {
-            "type": "array"
+            "type": "integer"
           },
-          "example": ["(ar_Question, ar_Answer)"]
+          "example": 98
         },
         "status": {
           "items": {

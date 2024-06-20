@@ -14,53 +14,97 @@ from log_info import logger
 
 client = chromadb.PersistentClient(path="./chromadb")
 
-model_en = SentenceTransformer('sentence-transformers/all-mpnet-base-v2', device = "cuda:0")
+# model_en = SentenceTransformer('sentence-transformers/all-mpnet-base-v2', device = "cuda:0")
+model_en = SentenceTransformer('BAAI/bge-base-en-v1.5', device = "cuda:0")
+
 model_ar = SentenceTransformer('sentence-transformers/paraphrase-multilingual-mpnet-base-v2', device = "cuda:0")
 
 logger = logger
 index_dict = {"question_ar":-1, "question_en":-1, "answer_ar":-1, "answer_en":-1, "reference": -1}
 
+
+################ check collection or show all collections
+
+def bge_m3_embedding_function(texts):
+    embedding_vectors = requests.post('http://192.168.0.151:3090/bge_m3_embedding', json={"texts":texts})
+    return embedding_vectors
+
+def check_collection(collection_name):
+	collection_list = []
+	tmp_collection_list = client.list_collections()
+	for i in tmp_collection_list:
+		collection_list.append(i.name)
+	if collection_name in collection_list:
+		return True
+	else:
+		return False
+
+def show_collection(collection_name):
+	collection_list = []
+	tmp_collection_list = client.list_collections()
+	for i in tmp_collection_list:
+		collection_list.append(i.name)
+	return collection_list
+
 ################ read qa pairs
 
-def read_qa_pairs(token_name):
-	collection = client.get_collection(token_name)
-	en_qa_pairs = np.unique(collection.get(where={"lang": "en", "type": "Q"})['documents'])
-	ar_qa_pairs = np.unique(collection.get(where={"lang": "ar", "type": "Q"})['documents'])
+def read_qa_pairs(application_name, lang='en', start_index=0, end_index=50):
+	collection = client.get_collection(application_name)
 
-	en_list, ar_list = [], []
-	for i in en_qa_pairs:
-		tmp_question = i.split('|__|')[0]
-		tmp_answer = i.split('|__|')[1]
-		tmp_reference = i.split('|__|')[2]
-		en_list.append((tmp_question, tmp_answer, tmp_reference))
-	
-	for i in ar_qa_pairs:
-		tmp_question = i.split('|__|')[0]
-		tmp_answer = i.split('|__|')[1]
-		tmp_reference = i.split('|__|')[2]
-		ar_list.append((tmp_question, tmp_answer, tmp_reference))
+	result_list = []
+	if lang == 'en':
+		list_len = len(np.unique(collection.get(where={"$and":[{"lang": "en"}, {"type": "Q"}]})['documents']))
+		en_qa_pairs = np.unique(collection.get(where={"$and":[{"lang": "en"}, {"type": "Q"}, {"$and":[{'index':{"$gte": start_index}}, {'index':{"$lt": end_index}}]}]})['documents'])
+		for i in en_qa_pairs:
+			tmp_question = i.split('|__|')[0]
+			tmp_answer = i.split('|__|')[1]
+			tmp_reference = i.split('|__|')[2]
+			result_list.append((tmp_question, tmp_answer, tmp_reference))	
+	else:
+		list_len = len(np.unique(collection.get(where={"$and":[{"lang": "ar"}, {"type": "Q"}]})['documents']))
+		ar_qa_pairs = np.unique(collection.get(where={"$and":[{"lang": "ar"}, {"type": "Q"}, {"$and":[{'index':{"$gte": start_index}}, {'index':{"$lt": end_index}}]}]})['documents'])
+		for i in ar_qa_pairs:
+			tmp_question = i.split('|__|')[0]
+			tmp_answer = i.split('|__|')[1]
+			tmp_reference = i.split('|__|')[2]
+			result_list.append((tmp_question, tmp_answer, tmp_reference))
 
-	return {"en_list": en_list, "ar_list": ar_list}
+	return {"result_list": result_list, "list_len": list_len}
 
 ################ empty collection
 
-def empty_collection(collection_name):
+def empty_application(application_name):
 	name_list = []
-	if not len(collection_name):
+	if not len(application_name):
 		tmp = client.list_collections()
 		for i in tmp:
 			client.delete_collection(i.name)
 			name_list.append(i.name)
 		return name_list
 	else:
-		for i in collection_name:
+		for i in application_name:
 			try:
 				client.delete_collection(i)
 				name_list.append(i)
 			except:
 				pass
 		return name_list
-		
+
+################ del files
+
+def del_files(application_name, token_names):
+	name_list = []
+	try:
+		collection = client.get_collection(name=application_name)
+	except:
+		logger.info(f"Get Collection ERROR!")
+		return "Get Collection ERROR!"
+	for i in token_names:
+		if len(collection.get(where={"source":i})) > 0:
+			collection.delete(where={"source":i})
+			name_list.append(i)
+	return name_list
+
 ################ read excel
 
 def process_excel(files=None, file_path=None):
@@ -96,13 +140,14 @@ def process_excel(files=None, file_path=None):
 				answer = data_sheet.cell(i, index_dict[x[1]]).value
 				question_candidates.append(question)
 				answer_candidates.append(answer)
-				if index_dict['reference'] != -1:
+				if 'reference' in index_dict and index_dict['reference'] != -1:
+					print(f"i:{i}, index_dict['reference]:{index_dict['reference']}")
 					reference = data_sheet.cell(i, index_dict['reference']).value
 					documents.append(f"{question}|__|{answer}|__|{reference}")
 				else:
 					documents.append(f"{question}|__|{answer}|__|")
 			embedding_candidates.append((question_candidates, answer_candidates))
-			# print(f"test: {x[0]}")
+			print(f"test: {'ar' if 'ar' in x[0] else 'en'}")
 			# exit()
 			all_data.append((embedding_candidates, documents, "ar" if "ar" in x[0] else "en"))
 	logger.info(f"Process Excel Success!")
@@ -110,48 +155,64 @@ def process_excel(files=None, file_path=None):
 
 ################ embedding the data and store in the vector DB
 
-def embedding_store(all_data, token_name):
+def embedding_store(all_data, token_name, application_name):
 	# check chromadb
 	## TODO insert stead of add
-	collection = client.get_or_create_collection(name=token_name, metadata={"hnsw:space": "cosine"})
+	## Use hash as ID to implement the <insert> feature
+
+	# collection = client.get_or_create_collection(name=token_name, metadata={"hnsw:space": "cosine"})
+	collection = client.get_or_create_collection(name=application_name, metadata={"hnsw:space": "cosine"})
 
 	documents_list = []
 	metadata_list = []
 	id_list = []
 	embedding_list = []
+	arabic_num = 0
+	english_num = 0
 	for i in all_data:
-		if i[2] == 'ar':
-			question_embedding = model_ar.encode(i[0][0][0]).tolist()
-			answer_embedding = model_ar.encode(i[0][0][1]).tolist()
-		else:
-			question_embedding = model_ar.encode(i[0][0][0]).tolist()
-			answer_embedding = model_ar.encode(i[0][0][1]).tolist()
-		exist_num = collection.count()
+		# if i[2] == 'ar':
+		# 	question_embedding = model_ar.encode(i[0][0][0]).tolist()
+		# 	answer_embedding = model_ar.encode(i[0][0][1]).tolist()
+		# else:
+		# 	question_embedding = model_ar.encode(i[0][0][0]).tolist()
+		# 	answer_embedding = model_ar.encode(i[0][0][1]).tolist()
+		question_embedding = bge_m3_embedding_function(i[0][0][0]).json()
+		answer_embedding = bge_m3_embedding_function(i[0][0][1]).json()
+		exist_num = collection.count() if collection.count()==0 else collection.count() + 1
 		for num, j in enumerate(i[1]):
 			documents_list.append(j)
 			documents_list.append(j)
 			embedding_list.append(question_embedding[num])
 			embedding_list.append(answer_embedding[num])
-			id_list.append(f"Q|__|{token_name}|__|{num+exist_num}|__|{i[2]}")
-			id_list.append(f"A|__|{token_name}|__|{num+exist_num}|__|{i[2]}")
-			metadata_list.append({"source": token_name, "type": "Q", "lang":i[2]})
-			metadata_list.append({"source": token_name, "type": "A", "lang":i[2]})
+			## Use hash as ID to implement the <insert> feature
+			id_list.append(f"Q|__|{str(hash(question_embedding[num]))}")
+			id_list.append(f"A|__|{str(hash(question_embedding[num]))}")
+			if i[2] == 'en':
+				metadata_list.append({"source": token_name, "type": "Q", "lang":i[2], "index":english_num})
+				metadata_list.append({"source": token_name, "type": "A", "lang":i[2], "index":english_num})
+				english_num += 1
+			else:
+				metadata_list.append({"source": token_name, "type": "Q", "lang":i[2], "index":arabic_num})
+				metadata_list.append({"source": token_name, "type": "A", "lang":i[2], "index":arabic_num})
+				arabic_num += 1
 
-		collection.add(documents=documents_list, embeddings=embedding_list, metadatas=metadata_list, ids=id_list)
+		collection.upsert(documents=documents_list, embeddings=embedding_list, metadatas=metadata_list, ids=id_list)
 	logger.info(f"Load into collection SUCCESS!")
 	return "Success"
 
-def qa_pairs_search(question, token_name):
+def qa_pairs_search(question, application_name):
 	try:
-		collection = client.get_collection(name=token_name)
+		collection = client.get_collection(name=application_name)
 	except:
 		logger.info(f"Get Collection ERROR!")
 		return "Get Collection ERROR!"
 	lang = check_lang_id(question)
-	if lang == 'ar':
-		question_embedding = model_ar.encode([question])[0].tolist()
-	else:
-		question_embedding = model_en.encode([question])[0].tolist()
+	# if lang == 'ar':
+	# 	question_embedding = model_ar.encode([question])[0].tolist()
+	# else:
+	# 	question_embedding = model_en.encode([question])[0].tolist()
+	question_embedding = bge_m3_embedding_function(question).json()
+	# print(f"Len_question_embeeding: {len(question_embedding)}")
 	
 	qa_pairs_candidates = collection.query(query_embeddings=[question_embedding], n_results=1, where={"type": "Q"})['documents'][0][0]
 	# print(f"test : {qa_pairs_candidates}")
@@ -160,9 +221,11 @@ def qa_pairs_search(question, token_name):
 	answer_res = qa_pairs_candidates.split('|__|')[1]
 	reference_res = qa_pairs_candidates.split('|__|')[2]
 
-	question_res_embedding = model_en.encode([question_res])[0].tolist()
+	# question_res_embedding = model_en.encode([question_res])[0].tolist()
+	question_res_embedding = bge_m3_embedding_function(question_res).json()
 
-	score = np.dot(question_res_embedding,question_embedding)/(norm(question_res_embedding)*norm(question_embedding))[0]
+	score = np.dot(question_res_embedding,question_embedding)/(norm(question_res_embedding)*norm(question_embedding))
+	print(f"Score: {score}")
 
 
 	return {"Question": question_res, "Answer": answer_res, "Reference":reference_res, "Score": score}
